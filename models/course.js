@@ -9,7 +9,7 @@ const db = require("../db");
 const Course = db.model("Course",{
     name: {type:String, require:true},
     subject: String,
-    number: Number,
+    number: {type:Number, min:0, max:999},
     description: String,
     credits: {type:Number, min:1, max:5}
 });
