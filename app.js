@@ -2,15 +2,15 @@ const express = require("express");
 const Course = require("./models/course");
 const User = require("./models/user"); 
 const cors = require('cors');
-const bcrypt = require('bcrypt'); // For password hashing
-const jwt = require('jsonwebtoken'); // For session management
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 const app = express();
 app.use(cors());
 
-const secret = "supersecret"; 
+const secret = "supersecret";
 
-// Middleware that parses HTTP requests with JSON body
 app.use(express.json());
 
 const authRequired = (req, res, next) => {
@@ -42,37 +42,49 @@ const router = express.Router();
 
 router.get("/courses", async(req,res) =>{
    try{
-      const courses = await Course.find({});
-      res.send(courses);
-      console.log("Retrieved all courses.");
+     const courses = await Course.find({});
+     res.send(courses);
+     console.log("Retrieved all courses.");
    }
    catch (err){
-      console.error("Error getting courses:", err);
-      res.status(500).send({ message: "Failed to retrieve courses." });
+     console.error("Error getting courses:", err);
+     res.status(500).send({ message: "Failed to retrieve courses." });
    }
 });
 
 router.post("/courses", authRequired, teacherRequired, async(req,res) => {
    try {
-        const course = await new Course(req.body);
+        const courseData = {
+            ...req.body,
+            createdBy: req.user.id
+        };
+        const course = await new Course(courseData);
         await course.save();
         res.status(201).json(course);
         console.log("New course created:", course.name);
    }
    catch(err){
-      console.error("Error creating course:", err);
-      res.status(400).send({ message: "Invalid course data.", error: err.message });
+     console.error("Error creating course:", err);
+     res.status(400).send({ message: "Invalid course data.", error: err.message });
    }
 });
 
 router.put("/courses/:id", authRequired, teacherRequired, async (req, res) => {
     try {
-        const course = await Course.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+        const course = await Course.findById(req.params.id);
+
         if (!course) {
             return res.status(404).send({ message: "Course not found." });
         }
-        res.json(course);
-        console.log("Course updated:", course.name);
+
+        if (course.createdBy.toString() !== req.user.id) {
+            return res.status(403).send({ message: "Forbidden. You can only edit courses you created." });
+        }
+        
+        const updatedCourse = await Course.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+        
+        res.json(updatedCourse);
+        console.log("Course updated:", updatedCourse.name);
     } catch (err) {
         console.error("Error updating course:", err);
         res.status(400).send({ message: "Invalid update data.", error: err.message });
@@ -81,10 +93,17 @@ router.put("/courses/:id", authRequired, teacherRequired, async (req, res) => {
 
 router.delete("/courses/:id", authRequired, teacherRequired, async (req, res) => {
     try {
-        const course = await Course.findByIdAndDelete(req.params.id);
+        const course = await Course.findById(req.params.id);
         if (!course) {
             return res.status(404).send({ message: "Course not found." });
         }
+
+        if (course.createdBy.toString() !== req.user.id) {
+            return res.status(403).send({ message: "Forbidden. You can only delete courses you created." });
+        }
+        
+        await Course.findByIdAndDelete(req.params.id);
+
         res.status(204).send();
         console.log("Course deleted:", req.params.id);
     } catch (err) {
